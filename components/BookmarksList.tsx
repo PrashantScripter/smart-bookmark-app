@@ -16,7 +16,6 @@ export default function BookmarksList({
   userId,
 }: BookmarksListProps) {
   const [bookmarks, setBookmarks] = useState<BookMark[]>(initialBookmarks);
-  const supabase = createClient();
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -31,10 +30,11 @@ export default function BookmarksList({
           event: "INSERT",
           schema: "public",
           table: "bookmarks",
-          filter: `user_id=eq.${userId}`,
         },
         (payload) => {
-          setBookmarks((prev) => [payload.new as BookMark, ...prev]);
+          if (payload.new?.user_id === userId) {
+            setBookmarks((prev) => [payload.new as BookMark, ...prev]);
+          }
         },
       )
       .on(
@@ -55,7 +55,6 @@ export default function BookmarksList({
         console.log("Subscription status:", status);
       });
 
-    // Cleanup on unmount
     return () => {
       supabase.removeChannel(channel);
     };

@@ -1,0 +1,154 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
+import { deleteBookmark } from "@/app/actions/bookmarks";
+import type { Bookmark as BookMark } from "@/types";
+import { Bookmark, ExternalLink, Globe, Loader2, Trash2 } from "lucide-react";
+
+interface BookmarksListProps {
+  initialBookmarks: BookMark[];
+  userId: string;
+}
+
+export default function BookmarksList({
+  initialBookmarks,
+  userId,
+}: BookmarksListProps) {
+  const [bookmarks, setBookmarks] = useState<BookMark[]>(initialBookmarks);
+  const supabase = createClient();
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    const channel = supabase
+      .channel("bookmarks-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "bookmarks",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          setBookmarks((prev) => [payload.new as BookMark, ...prev]);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "bookmarks",
+        },
+        (payload) => {
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            setBookmarks((prev) => prev.filter((b) => b.id !== deletedId));
+          }
+        },
+      )
+      .subscribe((status) => {
+        console.log("Subscription status:", status);
+      });
+
+    // Cleanup on unmount
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  const handleDelete = async (id: string) => {
+    if (confirm("Are you sure you want to delete this bookmark?")) {
+      setDeletingId(id);
+      try {
+        await deleteBookmark(id);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Failed to delete");
+      } finally {
+        setDeletingId(null); // Reset
+      }
+    }
+  };
+
+  const getHostname = (url: string) => {
+    try {
+      return new URL(url).hostname.replace("www.", "");
+    } catch {
+      return "link";
+    }
+  };
+
+  if (bookmarks.length === 0) {
+    return (
+      <div className="flex justify-center items-center bg-gray-100 p-4 rounded h-full">
+        <div className="flex flex-col items-center">
+          <Bookmark className="w-8 h-8 text-gray-400" />
+          <h3 className="text-lg font-semibold text-gray-900">
+            No bookmarks yet
+          </h3>
+          <p className="text-gray-500 max-w-sm mt-2 mb-6">
+            You haven't saved any bookmarks. Click the button above to add your
+            first link to the dashboard.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {bookmarks.map((bookmark) => (
+        <div
+          key={bookmark.id}
+          className="group flex flex-col justify-between p-5 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-200"
+        >
+          <div className="flex items-start gap-4 mb-4">
+            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg shrink-0">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h3
+                className="font-semibold text-gray-900 truncate pr-2"
+                title={bookmark.title}
+              >
+                {bookmark.title}
+              </h3>
+              <p className="text-xs text-gray-500 truncate">
+                {getHostname(bookmark.url)}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-4 border-t border-gray-100 mt-auto">
+            <a
+              href={bookmark.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg hover:bg-gray-100 hover:text-blue-600 transition-colors"
+            >
+              <span>Visit</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+
+            <button
+              onClick={() => handleDelete(bookmark.id)}
+              disabled={deletingId === bookmark.id}
+              className="group/delete p-2 text-neutral-400 cursor-pointer hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Delete Bookmark"
+            >
+              {deletingId === bookmark.id ? (
+                <Loader2 className="w-4 h-4 animate-spin text-red-500" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

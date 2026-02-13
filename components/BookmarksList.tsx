@@ -16,11 +16,22 @@ export default function BookmarksList({
   userId,
 }: BookmarksListProps) {
   const [bookmarks, setBookmarks] = useState<BookMark[]>(initialBookmarks);
-
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
+
+    console.log("🔍 [BookmarksList] Setting up realtime for userId:", userId);
+
+    // Log session info to verify authentication
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log(
+        "🔍 [BookmarksList] Session check:",
+        session ? "Authenticated" : "Not authenticated",
+        "User ID from session:",
+        session?.user?.id,
+      );
+    });
 
     const channel = supabase
       .channel("bookmarks-changes")
@@ -32,8 +43,22 @@ export default function BookmarksList({
           table: "bookmarks",
         },
         (payload) => {
+          console.log("📥 [BookmarksList] INSERT event received:", payload);
+          console.log(
+            "   payload.new.user_id:",
+            payload.new?.user_id,
+            "| current userId:",
+            userId,
+          );
           if (payload.new?.user_id === userId) {
+            console.log(
+              "✅ [BookmarksList] INSERT matches current user – adding bookmark",
+            );
             setBookmarks((prev) => [payload.new as BookMark, ...prev]);
+          } else {
+            console.log(
+              "⏭️ [BookmarksList] INSERT does not match current user – ignoring",
+            );
           }
         },
       )
@@ -45,17 +70,21 @@ export default function BookmarksList({
           table: "bookmarks",
         },
         (payload) => {
+          console.log("🗑️ [BookmarksList] DELETE event received:", payload);
           const deletedId = payload.old?.id;
           if (deletedId) {
+            console.log("   Deleting bookmark ID:", deletedId);
             setBookmarks((prev) => prev.filter((b) => b.id !== deletedId));
           }
         },
       )
-      .subscribe((status) => {
-        console.log("Subscription status:", status);
+      .subscribe((status, err) => {
+        console.log("📡 [BookmarksList] Subscription status:", status);
+        if (err) console.error("❌ [BookmarksList] Subscription error:", err);
       });
 
     return () => {
+      console.log("🧹 [BookmarksList] Cleaning up channel");
       supabase.removeChannel(channel);
     };
   }, [userId]);
@@ -68,7 +97,7 @@ export default function BookmarksList({
       } catch (error) {
         alert(error instanceof Error ? error.message : "Failed to delete");
       } finally {
-        setDeletingId(null); // Reset
+        setDeletingId(null);
       }
     }
   };

@@ -89,6 +89,33 @@ export default function BookmarksList({
     };
   }, [userId]);
 
+  // Refetch when tab becomes visible (catches missed real-time events)
+  useEffect(() => {
+    const supabase = createClient();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        console.log("👁️ Tab became visible – refetching bookmarks");
+        supabase
+          .from("bookmarks")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .then(({ data, error }) => {
+            if (error) {
+              console.error("Refetch error:", error);
+            } else if (data) {
+              setBookmarks(data);
+            }
+          });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [userId]);
+
   const handleDelete = async (id: string) => {
     if (confirm("Are you sure you want to delete this bookmark?")) {
       setDeletingId(id);

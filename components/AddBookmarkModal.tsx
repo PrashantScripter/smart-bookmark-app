@@ -3,15 +3,18 @@
 import { useRef, useState } from "react";
 import { X, Link as LinkIcon, Type, Loader2 } from "lucide-react";
 import { addBookmark } from "@/app/actions/bookmarks";
+import type { Bookmark } from "@/types";
 
 interface AddBookmarkModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onAdd: (bookmark: Bookmark) => void;
 }
 
 export default function AddBookmarkModal({
   isOpen,
   onClose,
+  onAdd,
 }: AddBookmarkModalProps) {
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -26,15 +29,17 @@ export default function AddBookmarkModal({
     setIsLoading(true);
     try {
       const formData = new FormData(e.currentTarget);
-      await addBookmark(formData);
+      const newBookmark = await addBookmark(formData);
+      // Optimistic update: add to parent state immediately
+      onAdd(newBookmark);
       formRef.current?.reset();
       setTitle("");
       setUrl("");
+      onClose();
     } catch (error) {
       alert(error instanceof Error ? error.message : "Failed to add bookmark");
     } finally {
       setIsLoading(false);
-      onClose();
     }
   }
 

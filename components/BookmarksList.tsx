@@ -9,85 +9,63 @@ import { Bookmark, ExternalLink, Globe, Loader2, Trash2 } from "lucide-react";
 interface BookmarksListProps {
   initialBookmarks: BookMark[];
   userId: string;
+  bookmarks: BookMark[];
+  setBookmarks: React.Dispatch<React.SetStateAction<BookMark[]>>;
 }
 
 export default function BookmarksList({
   initialBookmarks,
   userId,
+  bookmarks,
+  setBookmarks,
 }: BookmarksListProps) {
-  const [bookmarks, setBookmarks] = useState<BookMark[]>(initialBookmarks);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
+    const channelName = `user-bookmarks-${userId}`;
 
-    console.log("🔍 [BookmarksList] Setting up realtime for userId:", userId);
+    console.log(
+      "📡 [BookmarksList] Subscribing to broadcast channel:",
+      channelName,
+    );
 
-    // Log session info to verify authentication
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log(
-        "🔍 [BookmarksList] Session check:",
-        session ? "Authenticated" : "Not authenticated",
-        "User ID from session:",
-        session?.user?.id,
-      );
-    });
-
-    const channel = supabase
-      .channel("bookmarks-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "bookmarks",
-        },
-        (payload) => {
-          console.log("📥 [BookmarksList] INSERT event received:", payload);
-          console.log(
-            "   payload.new.user_id:",
-            payload.new?.user_id,
-            "| current userId:",
-            userId,
-          );
-          if (payload.new?.user_id === userId) {
+    const broadcastChannel = supabase
+      .channel(channelName)
+      .on("broadcast", { event: "bookmark_added" }, (payload) => {
+        console.log("📥 [BookmarksList] bookmark_added event:", payload);
+        const newBookmark = payload.payload.bookmark as BookMark;
+        setBookmarks((prev) => {
+          // Prevent duplicates
+          if (prev.some((b) => b.id === newBookmark.id)) {
             console.log(
-              "✅ [BookmarksList] INSERT matches current user – adding bookmark",
+              "⏭️ [BookmarksList] Duplicate bookmark ignored:",
+              newBookmark.id,
             );
-            setBookmarks((prev) => [payload.new as BookMark, ...prev]);
-          } else {
-            console.log(
-              "⏭️ [BookmarksList] INSERT does not match current user – ignoring",
-            );
+            return prev;
           }
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "bookmarks",
-        },
-        (payload) => {
-          console.log("🗑️ [BookmarksList] DELETE event received:", payload);
-          const deletedId = payload.old?.id;
-          if (deletedId) {
-            console.log("   Deleting bookmark ID:", deletedId);
-            setBookmarks((prev) => prev.filter((b) => b.id !== deletedId));
-          }
-        },
-      )
+          console.log("✅ [BookmarksList] Adding bookmark:", newBookmark.id);
+          return [newBookmark, ...prev];
+        });
+      })
+      .on("broadcast", { event: "bookmark_deleted" }, (payload) => {
+        console.log("🗑️ [BookmarksList] bookmark_deleted event:", payload);
+        const deletedId = payload.payload.id;
+        setBookmarks((prev) => prev.filter((b) => b.id !== deletedId));
+      })
       .subscribe((status, err) => {
-        console.log("📡 [BookmarksList] Subscription status:", status);
+        console.log(
+          "📡 [BookmarksList] Broadcast subscription status:",
+          status,
+        );
         if (err) console.error("❌ [BookmarksList] Subscription error:", err);
       });
 
     return () => {
-      console.log("🧹 [BookmarksList] Cleaning up channel");
-      supabase.removeChannel(channel);
+      console.log("🧹 [BookmarksList] Cleaning up broadcast channel");
+      supabase.removeChannel(broadcastChannel);
     };
-  }, [userId]);
+  }, [userId, setBookmarks]);
 
   // Refetch when tab becomes visible (catches missed real-time events)
   useEffect(() => {
@@ -121,6 +99,7 @@ export default function BookmarksList({
       setDeletingId(id);
       try {
         await deleteBookmark(id);
+        // Broadcast listener will handle removal from state
       } catch (error) {
         alert(error instanceof Error ? error.message : "Failed to delete");
       } finally {
@@ -159,7 +138,9 @@ export default function BookmarksList({
       {bookmarks.map((bookmark) => (
         <div
           key={bookmark.id}
-          className="group flex flex-col justify-between p-5 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-200"
+          className={`group flex flex-col justify-between p-5 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 ${
+            deletingId === bookmark.id ? "opacity-50 pointer-events-none" : ""
+          }`}
         >
           <div className="flex items-start gap-4 mb-4">
             <div className="p-2 bg-blue-50 text-blue-600 rounded-lg shrink-0">

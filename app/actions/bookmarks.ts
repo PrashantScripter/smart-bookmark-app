@@ -22,18 +22,32 @@ export async function addBookmark(formData: FormData) {
     throw new Error("You must be logged in");
   }
 
-  const { error } = await supabase.from("bookmarks").insert({
-    user_id: user.id,
-    url,
-    title,
-  });
+  const { data, error } = await supabase
+    .from("bookmarks")
+    .insert({
+      user_id: user.id,
+      url,
+      title,
+    })
+    .select()
+    .single();
 
   if (error) {
     throw new Error(`Failed to add bookmark: ${error.message}`);
   }
 
-  // Revalidate the dashboard page to show the new bookmark immediately
+  // Broadcast to user-specific channel for cross-tab sync
+  const broadcastChannel = supabase.channel(`user-bookmarks-${user.id}`);
+  await broadcastChannel.subscribe();
+  await broadcastChannel.send({
+    type: "broadcast",
+    event: "bookmark_added",
+    payload: { bookmark: data },
+  });
+  await broadcastChannel.unsubscribe();
+
   revalidatePath("/dashboard");
+  return data;
 }
 
 export async function deleteBookmark(id: string) {
@@ -57,6 +71,16 @@ export async function deleteBookmark(id: string) {
   if (error) {
     throw new Error(`Failed to delete bookmark: ${error.message}`);
   }
+
+  // Broadcast deletion to user-specific channel for cross-tab sync
+  const broadcastChannel = supabase.channel(`user-bookmarks-${user.id}`);
+  await broadcastChannel.subscribe();
+  await broadcastChannel.send({
+    type: "broadcast",
+    event: "bookmark_deleted",
+    payload: { id },
+  });
+  await broadcastChannel.unsubscribe();
 
   revalidatePath("/dashboard");
 }

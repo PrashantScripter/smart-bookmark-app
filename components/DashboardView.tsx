@@ -16,6 +16,15 @@ export default function DashboardView({
   userId,
 }: BookmarksListProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [bookmarks, setBookmarks] = useState<BookMark[]>(initialBookmarks);
+
+  const handleAddBookmark = (newBookmark: BookMark) => {
+    setBookmarks((prev) => {
+      // Prevent duplicates
+      if (prev.some((b) => b.id === newBookmark.id)) return prev;
+      return [newBookmark, ...prev];
+    });
+  };
 
   return (
     <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
@@ -39,16 +48,18 @@ export default function DashboardView({
 
       {/* Empty State */}
       <div className="border-2 border-dashed border-gray-300 rounded-xl bg-white/50 h-100 flex flex-col text-center p-6 animate-in fade-in zoom-in duration-500 overflow-y-auto">
-        
         <BookmarksList
           initialBookmarks={initialBookmarks || []}
           userId={userId}
+          bookmarks={bookmarks}
+          setBookmarks={setBookmarks}
         />
       </div>
 
       <AddBookmarkModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
+        onAdd={handleAddBookmark}
       />
     </main>
   );
